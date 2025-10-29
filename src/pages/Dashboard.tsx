@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,17 +8,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Edit, Trash2, MapPin, Bed } from "lucide-react";
+import { Plus, Edit, Trash2, MapPin, Bed, MessageCircle, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChatDialog } from "@/components/ChatDialog";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [kosts, setKosts] = useState<any[]>([]);
+  const [interests, setInterests] = useState<any[]>([]);
+  const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingKost, setEditingKost] = useState<any>(null);
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const [selectedUserName, setSelectedUserName] = useState<string>("");
+  const [chatOpen, setChatOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "kosts");
   
   // Form states
   const [namaKos, setNamaKos] = useState("");
@@ -33,6 +42,8 @@ export default function Dashboard() {
   useEffect(() => {
     checkAuth();
     fetchUserKosts();
+    fetchInterests();
+    fetchConversations();
   }, []);
 
   const checkAuth = async () => {
@@ -75,6 +86,41 @@ export default function Dashboard() {
       setKosts(kostsWithImages);
     }
     setLoading(false);
+  };
+
+  const fetchInterests = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { data } = await supabase
+      .from("interests")
+      .select(`
+        *,
+        kosts(nama_kos, id),
+        profiles(full_name)
+      `)
+      .eq("kosts.owner_id", session.user.id)
+      .order("created_at", { ascending: false });
+
+    if (data) setInterests(data);
+  };
+
+  const fetchConversations = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { data } = await supabase
+      .from("conversations")
+      .select(`
+        *,
+        kosts(nama_kos),
+        student:profiles!conversations_student_id_fkey(full_name),
+        messages(content, created_at)
+      `)
+      .eq("owner_id", session.user.id)
+      .order("updated_at", { ascending: false });
+
+    if (data) setConversations(data);
   };
 
   const resetForm = () => {
@@ -174,6 +220,12 @@ export default function Dashboard() {
     }).format(price);
   };
 
+  const openChat = (conversationId: string, userName: string) => {
+    setSelectedConversation(conversationId);
+    setSelectedUserName(userName);
+    setChatOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -182,7 +234,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold">Dashboard Pemilik</h1>
-            <p className="text-muted-foreground mt-2">Kelola semua listing kos Anda</p>
+            <p className="text-muted-foreground mt-2">Kelola kos, minat, dan percakapan</p>
           </div>
 
           <Dialog open={isDialogOpen} onOpenChange={(open) => {
@@ -310,11 +362,23 @@ export default function Dashboard() {
           </Dialog>
         </div>
 
-        {loading ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">Memuat data...</p>
-          </div>
-        ) : kosts.length > 0 ? (
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="mb-6">
+            <TabsTrigger value="kosts">Kos Saya</TabsTrigger>
+            <TabsTrigger value="interests">
+              Minat Mahasiswa {interests.length > 0 && `(${interests.length})`}
+            </TabsTrigger>
+            <TabsTrigger value="conversations">
+              Chat {conversations.length > 0 && `(${conversations.length})`}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="kosts">
+            {loading ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">Memuat data...</p>
+              </div>
+            ) : kosts.length > 0 ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {kosts.map((kost) => (
               <Card key={kost.id} className="overflow-hidden">
@@ -361,19 +425,104 @@ export default function Dashboard() {
                 </CardFooter>
               </Card>
             ))}
-          </div>
-        ) : (
-          <Card className="text-center py-12">
-            <CardContent>
-              <p className="text-muted-foreground mb-4">
-                Anda belum memiliki listing kos. Mulai tambahkan kos pertama Anda!
-              </p>
-              <Button onClick={() => setIsDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Tambah Kos Pertama
-              </Button>
-            </CardContent>
-          </Card>
+              </div>
+            ) : (
+              <Card className="text-center py-12">
+                <CardContent>
+                  <p className="text-muted-foreground mb-4">
+                    Anda belum memiliki listing kos. Mulai tambahkan kos pertama Anda!
+                  </p>
+                  <Button onClick={() => setIsDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Tambah Kos Pertama
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="interests">
+            {interests.length > 0 ? (
+              <div className="space-y-4">
+                {interests.map((interest) => (
+                  <Card key={interest.id}>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{interest.kosts?.nama_kos}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{interest.profiles?.full_name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(interest.created_at).toLocaleDateString('id-ID')}
+                          </p>
+                        </div>
+                        <Button onClick={() => navigate(`/kos/${interest.kosts?.id}`)}>
+                          Lihat Detail Kos
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="text-center py-12">
+                <CardContent>
+                  <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">Belum ada mahasiswa yang menunjukkan minat</p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="conversations">
+            {conversations.length > 0 ? (
+              <div className="space-y-4">
+                {conversations.map((conv: any) => (
+                  <Card key={conv.id} className="cursor-pointer hover:bg-accent/50" onClick={() => openChat(conv.id, conv.student?.full_name)}>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{conv.kosts?.nama_kos}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{conv.student?.full_name}</p>
+                          {conv.messages?.[0] && (
+                            <p className="text-sm text-muted-foreground line-clamp-1">
+                              {conv.messages[0].content}
+                            </p>
+                          )}
+                        </div>
+                        <Button size="sm" onClick={(e) => {
+                          e.stopPropagation();
+                          openChat(conv.id, conv.student?.full_name);
+                        }}>
+                          <MessageCircle className="mr-2 h-4 w-4" />
+                          Buka Chat
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="text-center py-12">
+                <CardContent>
+                  <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">Belum ada percakapan</p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
+
+        {selectedConversation && (
+          <ChatDialog
+            open={chatOpen}
+            onOpenChange={setChatOpen}
+            conversationId={selectedConversation}
+            otherUserName={selectedUserName}
+          />
         )}
       </div>
     </div>

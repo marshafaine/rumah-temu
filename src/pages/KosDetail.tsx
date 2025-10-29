@@ -4,9 +4,11 @@ import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { MapPin, Bed, Phone, MessageCircle, ArrowLeft, Check } from "lucide-react";
+import { MapPin, Bed, Phone, MessageCircle, ArrowLeft, Check, Heart } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
+import { toast } from "sonner";
+import { ChatDialog } from "@/components/ChatDialog";
 
 export default function KosDetail() {
   const { id } = useParams();
@@ -14,12 +16,50 @@ export default function KosDetail() {
   const [kost, setKost] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [owner, setOwner] = useState<any>(null);
+  const [hasInterest, setHasInterest] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
+    checkAuth();
     if (id) {
       fetchKostDetail();
     }
   }, [id]);
+
+  const checkAuth = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      setCurrentUserId(session.user.id);
+      if (id) {
+        checkExistingInterest(session.user.id, id);
+        checkExistingConversation(session.user.id, id);
+      }
+    }
+  };
+
+  const checkExistingInterest = async (userId: string, kostId: string) => {
+    const { data } = await supabase
+      .from('interests')
+      .select('id')
+      .eq('student_id', userId)
+      .eq('kost_id', kostId)
+      .single();
+    
+    setHasInterest(!!data);
+  };
+
+  const checkExistingConversation = async (userId: string, kostId: string) => {
+    const { data } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('student_id', userId)
+      .eq('kost_id', kostId)
+      .single();
+    
+    if (data) setConversationId(data.id);
+  };
 
   const fetchKostDetail = async () => {
     const { data: kostData, error } = await supabase
@@ -52,6 +92,62 @@ export default function KosDetail() {
     if (owner?.phone) {
       const message = encodeURIComponent(`Halo, saya tertarik dengan kos ${kost.nama_kos}`);
       window.open(`https://wa.me/${owner.phone}?text=${message}`, "_blank");
+    }
+  };
+
+  const handleShowInterest = async () => {
+    if (!currentUserId) {
+      toast.error("Silakan login terlebih dahulu");
+      navigate("/auth");
+      return;
+    }
+
+    const { error: interestError } = await supabase
+      .from('interests')
+      .insert([{
+        kost_id: id,
+        student_id: currentUserId,
+        message: `Saya tertarik dengan ${kost.nama_kos}`
+      }]);
+
+    if (interestError) {
+      if (interestError.code === '23505') {
+        toast.error("Anda sudah menunjukkan minat pada kos ini");
+      } else {
+        toast.error("Gagal menunjukkan minat");
+      }
+      return;
+    }
+
+    // Create conversation
+    const { data: convData, error: convError } = await supabase
+      .from('conversations')
+      .insert([{
+        kost_id: id,
+        owner_id: kost.owner_id,
+        student_id: currentUserId
+      }])
+      .select()
+      .single();
+
+    if (convData) {
+      setConversationId(convData.id);
+      setHasInterest(true);
+      toast.success("Minat berhasil dikirim! Pemilik akan segera menghubungi Anda.");
+    }
+  };
+
+  const handleOpenChat = () => {
+    if (!currentUserId) {
+      toast.error("Silakan login terlebih dahulu");
+      navigate("/auth");
+      return;
+    }
+
+    if (conversationId) {
+      setChatOpen(true);
+    } else {
+      toast.error("Tunjukkan minat terlebih dahulu untuk memulai chat");
     }
   };
 
@@ -181,9 +277,25 @@ export default function KosDetail() {
                   <h3 className="font-semibold">Pemilik Kos</h3>
                   <p className="text-muted-foreground">{owner?.full_name || "Nama tidak tersedia"}</p>
 
+                  {currentUserId && currentUserId !== kost.owner_id && (
+                    <div className="space-y-2 mb-4">
+                      {!hasInterest ? (
+                        <Button className="w-full" onClick={handleShowInterest}>
+                          <Heart className="mr-2 h-4 w-4" />
+                          Saya Tertarik
+                        </Button>
+                      ) : (
+                        <Button className="w-full" onClick={handleOpenChat}>
+                          <MessageCircle className="mr-2 h-4 w-4" />
+                          Buka Chat
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
                   {owner?.phone && (
                     <div className="space-y-2">
-                      <Button className="w-full" onClick={handleWhatsApp}>
+                      <Button className="w-full" variant="outline" onClick={handleWhatsApp}>
                         <MessageCircle className="mr-2 h-4 w-4" />
                         Hubungi via WhatsApp
                       </Button>
@@ -207,6 +319,15 @@ export default function KosDetail() {
           </div>
         </div>
       </div>
+
+      {conversationId && (
+        <ChatDialog
+          open={chatOpen}
+          onOpenChange={setChatOpen}
+          conversationId={conversationId}
+          otherUserName={owner?.full_name || "Pemilik"}
+        />
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 import { Session } from "@supabase/supabase-js";
 import { toast } from "sonner";
+import { NotificationBell } from "./NotificationBell";
 
 export const Navbar = () => {
   const navigate = useNavigate();
@@ -67,6 +68,7 @@ export const Navbar = () => {
 
           {session ? (
             <>
+              <NotificationBell />
               {userRole === "pemilik" && (
                 <Button variant="default" size="sm" onClick={() => navigate("/dashboard")}>
                   <Plus className="mr-2 h-4 w-4" />
