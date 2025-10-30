@@ -335,6 +335,51 @@ export type Database = {
         }
         Relationships: []
       }
+      reviews: {
+        Row: {
+          comment: string
+          created_at: string
+          id: string
+          kost_id: string
+          rating: number
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          comment: string
+          created_at?: string
+          id?: string
+          kost_id: string
+          rating: number
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          comment?: string
+          created_at?: string
+          id?: string
+          kost_id?: string
+          rating?: number
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_kost_id_fkey"
+            columns: ["kost_id"]
+            isOneToOne: false
+            referencedRelation: "kosts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

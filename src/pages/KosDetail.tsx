@@ -4,7 +4,7 @@ import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { MapPin, Bed, Phone, MessageCircle, ArrowLeft, Check, Heart } from "lucide-react";
+import { MapPin, Bed, Phone, MessageCircle, ArrowLeft, Check, Heart, Star } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import { toast } from "sonner";
@@ -20,11 +20,17 @@ export default function KosDetail() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [averageRating, setAverageRating] = useState<number>(0);
+  const [userReview, setUserReview] = useState<any>(null);
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewComment, setReviewComment] = useState<string>("");
 
   useEffect(() => {
     checkAuth();
     if (id) {
       fetchKostDetail();
+      fetchReviews();
     }
   }, [id]);
 
@@ -35,6 +41,41 @@ export default function KosDetail() {
       if (id) {
         checkExistingInterest(session.user.id, id);
         checkExistingConversation(session.user.id, id);
+        checkUserReview(session.user.id, id);
+      }
+    }
+  };
+
+  const checkUserReview = async (userId: string, kostId: string) => {
+    const { data } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('student_id', userId)
+      .eq('kost_id', kostId)
+      .maybeSingle();
+    
+    if (data) {
+      setUserReview(data);
+      setReviewRating(data.rating);
+      setReviewComment(data.comment);
+    }
+  };
+
+  const fetchReviews = async () => {
+    const { data } = await supabase
+      .from('reviews')
+      .select(`
+        *,
+        profiles(full_name)
+      `)
+      .eq('kost_id', id)
+      .order('created_at', { ascending: false });
+    
+    if (data) {
+      setReviews(data);
+      if (data.length > 0) {
+        const avg = data.reduce((sum, review) => sum + review.rating, 0) / data.length;
+        setAverageRating(Math.round(avg * 10) / 10);
       }
     }
   };
@@ -151,6 +192,73 @@ export default function KosDetail() {
     }
   };
 
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!currentUserId) {
+      toast.error("Silakan login terlebih dahulu");
+      navigate("/auth");
+      return;
+    }
+
+    if (!reviewComment.trim()) {
+      toast.error("Komentar tidak boleh kosong");
+      return;
+    }
+
+    if (userReview) {
+      // Update existing review
+      const { error } = await supabase
+        .from('reviews')
+        .update({
+          rating: reviewRating,
+          comment: reviewComment.trim()
+        })
+        .eq('id', userReview.id);
+
+      if (error) {
+        toast.error("Gagal memperbarui ulasan");
+        return;
+      }
+      toast.success("Ulasan berhasil diperbarui");
+    } else {
+      // Create new review
+      const { error } = await supabase
+        .from('reviews')
+        .insert([{
+          kost_id: id,
+          student_id: currentUserId,
+          rating: reviewRating,
+          comment: reviewComment.trim()
+        }]);
+
+      if (error) {
+        toast.error("Gagal mengirim ulasan");
+        return;
+      }
+      toast.success("Ulasan berhasil dikirim");
+    }
+
+    fetchReviews();
+    checkUserReview(currentUserId, id!);
+  };
+
+  const renderStars = (rating: number, interactive: boolean = false, onRate?: (rating: number) => void) => {
+    return (
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Star
+            key={star}
+            className={`h-5 w-5 ${
+              star <= rating ? "fill-yellow-400 text-yellow-400" : "text-gray-300"
+            } ${interactive ? "cursor-pointer hover:text-yellow-400" : ""}`}
+            onClick={() => interactive && onRate?.(star)}
+          />
+        ))}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -258,6 +366,78 @@ export default function KosDetail() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Reviews Section */}
+            <Card>
+              <CardContent className="p-6 space-y-6">
+                <div>
+                  <h2 className="text-xl font-semibold mb-4">Rating & Ulasan</h2>
+                  {reviews.length > 0 ? (
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="text-4xl font-bold">{averageRating}</div>
+                      <div>
+                        {renderStars(Math.round(averageRating))}
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {reviews.length} ulasan
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground mb-6">Belum ada ulasan</p>
+                  )}
+                </div>
+
+                {/* Review Form */}
+                {currentUserId && currentUserId !== kost.owner_id && (
+                  <div className="border-t pt-6">
+                    <h3 className="font-semibold mb-4">
+                      {userReview ? "Edit Ulasan Anda" : "Tulis Ulasan"}
+                    </h3>
+                    <form onSubmit={handleSubmitReview} className="space-y-4">
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">Rating</label>
+                        {renderStars(reviewRating, true, setReviewRating)}
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">Komentar</label>
+                        <textarea
+                          value={reviewComment}
+                          onChange={(e) => setReviewComment(e.target.value)}
+                          className="w-full min-h-[100px] p-3 rounded-lg border bg-background"
+                          placeholder="Bagikan pengalaman Anda tentang kos ini..."
+                          required
+                        />
+                      </div>
+                      <Button type="submit" className="w-full">
+                        {userReview ? "Perbarui Ulasan" : "Kirim Ulasan"}
+                      </Button>
+                    </form>
+                  </div>
+                )}
+
+                {/* Reviews List */}
+                {reviews.length > 0 && (
+                  <div className="border-t pt-6 space-y-6">
+                    {reviews.map((review) => (
+                      <div key={review.id} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold">{review.profiles?.full_name || "Pengguna"}</p>
+                          {renderStars(review.rating)}
+                        </div>
+                        <p className="text-muted-foreground">{review.comment}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(review.created_at).toLocaleDateString("id-ID", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>

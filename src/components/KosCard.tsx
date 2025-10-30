@@ -1,7 +1,9 @@
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MapPin, Users, Bed } from "lucide-react";
+import { MapPin, Users, Bed, Star } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 interface KosCardProps {
@@ -16,6 +18,25 @@ interface KosCardProps {
 
 export const KosCard = ({ id, nama_kos, kota, tipe_kos, harga_bulanan, kamar_tersedia, image_url }: KosCardProps) => {
   const navigate = useNavigate();
+  const [averageRating, setAverageRating] = useState<number | null>(null);
+  const [reviewCount, setReviewCount] = useState<number>(0);
+
+  useEffect(() => {
+    fetchRating();
+  }, [id]);
+
+  const fetchRating = async () => {
+    const { data } = await supabase
+      .from('reviews')
+      .select('rating')
+      .eq('kost_id', id);
+    
+    if (data && data.length > 0) {
+      const avg = data.reduce((sum, review) => sum + review.rating, 0) / data.length;
+      setAverageRating(Math.round(avg * 10) / 10);
+      setReviewCount(data.length);
+    }
+  };
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -47,9 +68,18 @@ export const KosCard = ({ id, nama_kos, kota, tipe_kos, harga_bulanan, kamar_ter
       <CardContent className="p-4 space-y-3">
         <h3 className="font-semibold text-lg line-clamp-1">{nama_kos}</h3>
         
-        <div className="flex items-center text-sm text-muted-foreground">
-          <MapPin className="h-4 w-4 mr-1" />
-          {kota}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center text-sm text-muted-foreground">
+            <MapPin className="h-4 w-4 mr-1" />
+            {kota}
+          </div>
+          {averageRating !== null && (
+            <div className="flex items-center gap-1 text-sm">
+              <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+              <span className="font-semibold">{averageRating}</span>
+              <span className="text-muted-foreground">({reviewCount})</span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between text-sm">
