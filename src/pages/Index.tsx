@@ -18,22 +18,31 @@ const Index = () => {
   }, []);
 
   const fetchFeaturedKosts = async () => {
-    const { data, error } = await supabase
-      .from("kosts")
-      .select(`
-        *,
-        kost_images(image_url, is_primary)
-      `)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-      .limit(6);
+    try {
+      const { data, error } = await supabase
+        .from("kosts")
+        .select(`
+          *,
+          kost_images(image_url, is_primary)
+        `)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(6);
 
-    if (data) {
-      const kostsWithImages = data.map((kost) => ({
-        ...kost,
-        image_url: kost.kost_images?.find((img: any) => img.is_primary)?.image_url || kost.kost_images?.[0]?.image_url,
-      }));
-      setFeaturedKosts(kostsWithImages);
+      if (error) {
+        console.error("Error fetching kosts:", error);
+        return;
+      }
+
+      if (data) {
+        const kostsWithImages = data.map((kost) => ({
+          ...kost,
+          image_url: kost.kost_images?.find((img: any) => img.is_primary)?.image_url || kost.kost_images?.[0]?.image_url,
+        }));
+        setFeaturedKosts(kostsWithImages);
+      }
+    } catch (err) {
+      console.error("Failed to fetch kosts:", err);
     }
   };
 
